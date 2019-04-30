@@ -1,0 +1,179 @@
+#import mgcv package
+library(mgcv)
+
+house=read.csv("/Users/song/Desktop/stat444/project/housing_price.csv")
+
+##Data Cleanup
+#Fill all empty cells with NA
+house[house=='']<-NA
+
+#bad data in YR_RMDL
+house$YR_RMDL[house$YR_RMDL==20]<-2008
+
+#bad data in STORIES
+house$STORIES[house$STORIES==826]<-2
+house$STORIES[house$STORIES==275]<-2
+house$STORIES[house$STORIES==250]<-2
+house$STORIES[house$STORIES==25]<-2
+house$STORIES[house$STORIES==20]<-2
+
+#bad data in LANDAREA
+house$LANDAREA[house$LANDAREA==0]<-2294
+
+#NA's in AYB, replace by first quantile
+house$AYB[is.na(house$AYB)]<-1917
+
+#NA's in YR_RMDL, replace by 0
+house$YR_RMDL[is.na(house$YR_RMDL)]<-0
+
+#NA's in STORIES, replace by median 2
+house$STORIES[is.na(house$STORIES)]<-2
+
+#NA's in KITCHENS, replace by median 1
+house$KITCHENS[is.na(house$KITCHENS)]<-1
+
+#Replace 'No Data' in HEAT by 'Forced Air'
+house$HEAT[house$HEAT=='No Data']<-'Forced Air'
+
+#Replace 0s in AC by 'Y'
+house$AC[house$AC==0]<-'Y'
+
+#Replace NA's in QUANZDRANT by 'NW'
+house$QUADRANT[is.na(house$QUADRANT)]<-'NW'
+
+#Replace NA's in ASSESSMENT_NBHD by 'Old City 1'
+house$ASSESSMENT_NBHD[is.na(house$ASSESSMENT_NBHD)]<-'Old City 1'
+
+#Replace NA's in CENSUS_BLOCK by '009000 1001'
+house$CENSUS_BLOCK[is.na(house$CENSUS_BLOCK)]<-'009000 1001'
+
+#switch 'FULLADDRESS', 'NATIONALGRID', 'ASSESSMENT_SUBNBHD' to numeric value
+house$ASSESSMENT_NBHD<-as.numeric(house$ASSESSMENT_NBHD)
+house$FULLADDRESS[is.na(house$ASSESSMENT_NBHD)]<-0
+house$FULLADDRESS<-as.numeric(house$FULLADDRESS)
+house$FULLADDRESS[is.na(house$FULLADDRESS)]<-0
+house$NATIONALGRID<-as.numeric(house$NATIONALGRID)
+house$NATIONALGRID[is.na(house$NATIONALGRID)]<-0
+house$ASSESSMENT_SUBNBHD<-as.numeric(house$ASSESSMENT_SUBNBHD)
+house$ASSESSMENT_SUBNBHD[is.na(house$ASSESSMENT_SUBNBHD)]<-0
+
+#Add new variable, log transformation of PRICE, GBA, LANDAREA, numeric transformation of SALEDATE
+house$logprice<-log(house$PRICE)
+house$logGBA<-log(house$GBA)
+house$logLANDAREA<-log(house$LANDAREA)
+house$numSALEDATE<-as.numeric(as.Date(house$SALEDATE))
+
+#Adjust AC, GRADE, CNDTN to ordinal variables by assigning increasing levels
+house$ordAC<-0
+house$ordAC[house$AC=="N"]<-1
+house$ordAC[house$AC=="Y"]<-2
+
+house$ordGRADE<-0
+house$ordGRADE[house$GRADE=="Low Quality"]<-1
+house$ordGRADE[house$GRADE=="Fair Quality"]<-2
+house$ordGRADE[house$GRADE=="Average"]<-3
+house$ordGRADE[house$GRADE=="Above Average"]<-4
+house$ordGRADE[house$GRADE=="Good Quality"]<-5
+house$ordGRADE[house$GRADE=="Very Good"]<-6
+house$ordGRADE[house$GRADE=="Excellent"]<-7
+house$ordGRADE[house$GRADE=="Superior"]<-8
+house$ordGRADE[house$GRADE=="Exceptional-A"]<-9
+house$ordGRADE[house$GRADE=="Exceptional-B"]<-10
+house$ordGRADE[house$GRADE=="Exceptional-C"]<-11
+house$ordGRADE[house$GRADE=="Exceptional-D"]<-12
+
+house$ordCNDTN<-0
+house$ordCNDTN[house$CNDTN=="Poor"]<-1
+house$ordCNDTN[house$CNDTN=="Fair"]<-2
+house$ordCNDTN[house$CNDTN=="Average"]<-3
+house$ordCNDTN[house$CNDTN=="Good"]<-4
+house$ordCNDTN[house$CNDTN=="Very Good"]<-5
+house$ordCNDTN[house$CNDTN=="Excellent"]<-6
+
+#Create error metric function RMSLE
+rmsle<-function(y,pred){
+  return(sqrt(1/length(y)*sum((y-pred)^2)))
+}
+
+
+# Smoothing using GAM model
+
+# Model 1
+# Smoothing Splines and Linear Regression including all variables
+# Assign new smgam_pred
+smgam_pred<-list()
+for (i in 1:5) {
+test<-house[house$fold==i,]
+train<-house[house$fold!=i,]
+#Fit a smoothing gam model
+smgam<-gam(logprice~s(BATHRM)+HF_BATHRM+s(BEDRM)+s(ROOMS)+KITCHENS+STORIES+s(FIREPLACES)
+            +USECODE+s(AYB)+s(YR_RMDL)+s(EYB)+s(logGBA)+s(ZIPCODE)+s(logLANDAREA)
+            +s(LATITUDE,LONGITUDE)+s(as.numeric(HEAT))+AC+s(ordCNDTN,k=6)
+            +s(as.numeric(STYLE))+s(as.numeric(STRUCT),k=8)+s(ordGRADE)
+            +s(as.numeric(EXTWALL))+s(as.numeric(ROOF))+s(as.numeric(INTWALL))
+            +s(numSALEDATE)+s(ASSESSMENT_NBHD,ASSESSMENT_SUBNBHD)
+            +s(CENSUS_TRACT,as.numeric(CENSUS_BLOCK))+s(FULLADDRESS)+s(NATIONALGRID)
+            +WARD+QUADRANT,data=train)
+Temp<-as.data.frame(predict.gam(smgam,test))
+Temp[,2]<-rownames(Temp)
+if (i==1) {smgam_pred<-merge(smgam_pred,Temp,all=TRUE)}
+smgam_pred<-merge(smgam_pred,Temp,all=TRUE)}
+smgam_pred<-smgam_pred[order(as.numeric(smgam_pred$V2)),]
+rmsle_record1<-rmsle(house$logprice,smgam_pred$`predict.gam(smgam, test)`)
+rmsle_record1
+
+# Model 2
+# Add SalesDate as an interaction term to most of the other variables
+# Assign new smgam_pred
+smgam_pred.2<-list()
+for (i in 1:5) {
+  test<-house[house$fold==i,]
+  train<-house[house$fold!=i,]
+  #Fit a smoothing gam model
+  smgam<-gam(logprice~te(BATHRM,numSALEDATE)+te(HF_BATHRM,numSALEDATE)+te(BEDRM,numSALEDATE)+te(ROOMS,numSALEDATE)+KITCHENS+STORIES
+             +USECODE+te(AYB,numSALEDATE)+te(YR_RMDL,numSALEDATE)+te(EYB,numSALEDATE)+te(logGBA,numSALEDATE)+te(ZIPCODE,numSALEDATE)+te(logLANDAREA,numSALEDATE)
+             +s(LATITUDE,LONGITUDE,bs='tp')+te(as.numeric(HEAT),numSALEDATE)+ordAC+te(ordCNDTN,numSALEDATE, k=6)
+             +te(as.numeric(STYLE),numSALEDATE)+te(as.numeric(STRUCT),numSALEDATE,k=8)+te(ordGRADE,numSALEDATE)+te(FIREPLACES,numSALEDATE)
+             +te(as.numeric(EXTWALL),numSALEDATE)+te(as.numeric(ROOF),numSALEDATE)+te(as.numeric(INTWALL),numSALEDATE)
+             +s(numSALEDATE)+s(ASSESSMENT_SUBNBHD,ASSESSMENT_NBHD)
+             +s(as.numeric(CENSUS_BLOCK),CENSUS_TRACT)+s(FULLADDRESS)+s(NATIONALGRID)
+             +WARD, data=train,selection=TRUE)
+  Temp<-as.data.frame(predict.gam(smgam,test))
+  Temp[,2]<-rownames(Temp)
+  # Initialize first step
+  if (i==1) {smgam_pred.2<-merge(smgam_pred.2,Temp,all=TRUE)}
+  # Update smgam_pred
+  smgam_pred.2<-merge(smgam_pred.2,Temp,all=TRUE)}
+# Update smgam_pred
+smgam_pred.2<-smgam_pred.2[order(as.numeric(smgam_pred.2$V2)),]
+# Assign the new RMSLE
+rmsle_record2<-rmsle(house$logprice,smgam_pred.2$`predict.gam(smgam, test)`)
+rmsle_record2
+
+
+# Model 3
+# Linear Regression including all variables
+# Assign new smgam_pred
+smgam_pred.3<-list()
+for (i in 1:5) {
+  test<-house[house$fold==i,]
+  train<-house[house$fold!=i,]
+  #Fit a smoothing gam model
+  smgam<-gam(logprice~BATHRM+HF_BATHRM+BEDRM+ROOMS+KITCHENS+STORIES
+             +USECODE+AYB+YR_RMDL+EYB+logGBA+ZIPCODE+logLANDAREA
+             +s(LATITUDE,LONGITUDE,bs='tp')+HEAT+ordAC+ordCNDTN
+             +s(as.numeric(STYLE))+s(as.numeric(STRUCT),k=8)+ordGRADE+s(as.numeric(FIREPLACES))
+             +s(as.numeric(EXTWALL))+numSALEDATE+s(as.numeric(ROOF))+s(as.numeric(INTWALL))
+             +numSALEDATE+s(ASSESSMENT_SUBNBHD,ASSESSMENT_NBHD)
+             +s(as.numeric(CENSUS_BLOCK),CENSUS_TRACT)+WARD, data=train,selection=TRUE)
+  Temp<-as.data.frame(predict.gam(smgam,test))
+  Temp[,2]<-rownames(Temp)
+  # Initialize first step
+  if (i==1) {smgam_pred.3<-merge(smgam_pred.3,Temp,all=TRUE)}
+  # Update smgam_pred
+  smgam_pred.3<-merge(smgam_pred.3,Temp,all=TRUE)}
+# Update smgam_pred
+smgam_pred.3<-smgam_pred.3[order(as.numeric(smgam_pred.3$V2)),]
+# Assign the new RMSLE
+rmsle_record3<-rmsle(house$logprice,smgam_pred.3$`predict.gam(smgam, test)`)
+rmsle_record3
