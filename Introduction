@@ -1,2 +1,5 @@
 # House-Price-Prediction
-The purpose of this project is to predict house prices in the Washington D.C.. The dataset contains 39520 observations, each observation has 37 attributes which contians information about each individual property. 3 methods are tested, Smoothing, RandomForest and Boosting. The risk metric used is the RMSLE(Root-Mean-Squared-Logarithmic-Error).
+The purpose of this project is to predict house prices in the Washington D.C..
+The dataset contains 39520 observations, each observation has 37 attributes which contians 
+information about each individual property. 3 methods are tested, Smoothing, RandomForest and Boosting. 
+The risk metric used is the RMSLE(Root-Mean-Squared-Logarithmic-Error).  
