@@ -1,0 +1,263 @@
+# Random Forest
+
+house=read.csv("/Users/JasonRuan/Desktop/housing_price.csv")
+
+##Data Cleanup
+#Fill all empty cells with NA
+house[house=='']<-NA
+
+#bad data in YR_RMDL
+house$YR_RMDL[house$YR_RMDL==20]<-2008
+
+#bad data in STORIES
+house$STORIES[house$STORIES==826]<-2
+house$STORIES[house$STORIES==275]<-2
+house$STORIES[house$STORIES==250]<-2
+house$STORIES[house$STORIES==25]<-2
+house$STORIES[house$STORIES==20]<-2
+
+#bad data in LANDAREA
+house$LANDAREA[house$LANDAREA==0]<-2294
+
+#NA's in AYB, replace by first quantile
+house$AYB[is.na(house$AYB)]<-1917
+
+#NA's in YR_RMDL, replace by 0
+house$YR_RMDL[is.na(house$YR_RMDL)]<-0
+
+#NA's in STORIES, replace by median 2
+house$STORIES[is.na(house$STORIES)]<-2
+
+#NA's in KITCHENS, replace by median 1
+house$KITCHENS[is.na(house$KITCHENS)]<-1
+
+#Replace 'No Data' in HEAT by 'Forced Air'
+house$HEAT[house$HEAT=='No Data']<-'Forced Air'
+
+#Replace 0s in AC by 'Y'
+house$AC[house$AC==0]<-'Y'
+
+#Replace NA's in QUANZDRANT by 'NW'
+house$QUADRANT[is.na(house$QUADRANT)]<-'NW'
+
+#Replace NA's in ASSESSMENT_NBHD by 'Old City 1'
+house$ASSESSMENT_NBHD[is.na(house$ASSESSMENT_NBHD)]<-'Old City 1'
+
+#Replace NA's in Assessment_subnbhd
+for (i in 1:39520){
+  if (is.na(house$ASSESSMENT_SUBNBHD[i])) {
+    house$ASSESSMENT_SUBNBHD2[i]=as.character(house$ASSESSMENT_NBHD[i])}
+  else {house$ASSESSMENT_SUBNBHD2[i]=as.character(house$ASSESSMENT_SUBNBHD[i])}}
+house$ASSESSMENT_SUBNBHD2<-as.factor(house$ASSESSMENT_SUBNBHD2)
+
+#Replace NA's in CENSUS_BLOCK by '009000 1001'
+house$CENSUS_BLOCK[is.na(house$CENSUS_BLOCK)]<-'009000 1001'
+
+#Add new variable, log transformation of PRICE, GBA, LANDAREA, numeric transformation of SALEDATE
+house$logprice<-log(house$PRICE)
+house$logGBA<-log(house$GBA)
+house$logLANDAREA<-log(house$LANDAREA)
+house$numSALEDATE<-as.numeric(as.Date(house$SALEDATE))
+
+#Adjust AC, GRADE, CNDTN to ordinal variables by assigning increasing levels
+house$ordAC<-0
+house$ordAC[house$AC=="N"]<-1
+house$ordAC[house$AC=="Y"]<-2
+
+house$ordGRADE<-0
+house$ordGRADE[house$GRADE=="Low Quality"]<-1
+house$ordGRADE[house$GRADE=="Fair Quality"]<-2
+house$ordGRADE[house$GRADE=="Average"]<-3
+house$ordGRADE[house$GRADE=="Above Average"]<-4
+house$ordGRADE[house$GRADE=="Good Quality"]<-5
+house$ordGRADE[house$GRADE=="Very Good"]<-6
+house$ordGRADE[house$GRADE=="Excellent"]<-7
+house$ordGRADE[house$GRADE=="Superior"]<-8
+house$ordGRADE[house$GRADE=="Exceptional-A"]<-9
+house$ordGRADE[house$GRADE=="Exceptional-B"]<-10
+house$ordGRADE[house$GRADE=="Exceptional-C"]<-11
+house$ordGRADE[house$GRADE=="Exceptional-D"]<-12
+
+house$ordCNDTN<-0
+house$ordCNDTN[house$CNDTN=="Poor"]<-1
+house$ordCNDTN[house$CNDTN=="Fair"]<-2
+house$ordCNDTN[house$CNDTN=="Average"]<-3
+house$ordCNDTN[house$CNDTN=="Good"]<-4
+house$ordCNDTN[house$CNDTN=="Very Good"]<-5
+house$ordCNDTN[house$CNDTN=="Excellent"]<-6
+
+
+#Error metric
+rmsle<-function(y,pred){
+  return(sqrt(1/length(y)*sum((y-pred)^2)))
+}
+
+#Initialize formula
+formula <- paste0("log(PRICE) ~ ",
+                  paste("BATHRM", "HF_BATHRM", "HEAT", "ROOMS", "BEDRM", "ordAC", 
+                        "AYB", "EYB", "STORIES", "logGBA", "STYLE", "QUADRANT",
+                        "FIREPLACES", "logLANDAREA", "YR_RMDL", "ROOF", "KITCHENS",
+                        "CENSUS_BLOCK", "WARD","EXTWALL","INTWALL", "USECODE",
+                        "ZIPCODE", "LATITUDE", "LONGITUDE", "ASSESSMENT_NBHD",
+                        "ASSESSMENT_SUBNBHD2", "CENSUS_TRACT", "numSALEDATE", "ordGRADE",
+                        "ordCNDTN", "STRUCT",sep="+"))
+
+get.explanatory_varnames <- function(formula){ f <- as.formula(formula)
+terms <- terms(f)
+attr(terms, "term.labels")
+}
+
+get.response <- function(fittedTree, test.data){
+  f <- formula(fittedTree)
+  terms <- terms(f)
+  response.id <- attr(terms, "response")
+  response <- as.list(attr(terms, "variables"))[[response.id + 1]]
+  with(test.data, eval(response))}
+
+# Model Starts
+library(randomForest)
+library(ranger)
+set.seed(67136)
+
+house.rg <- ranger(as.formula(formula),
+                   data = house,
+                   importance = "impurity")
+var.imp<-as.data.frame(house.rg$variable.importance)
+var.imp
+
+# Remove variates according to importance < 100
+formula <- paste0("log(PRICE) ~ ",
+                  paste("BATHRM", "ROOMS", "BEDRM", "ordAC", "AYB", "EYB", "logGBA",
+                        "FIREPLACES", "logLANDAREA", "YR_RMDL", "CENSUS_BLOCK", "WARD",
+                        "ZIPCODE", "LATITUDE", "LONGITUDE", "ASSESSMENT_NBHD",
+                        "ASSESSMENT_SUBNBHD2","CENSUS_TRACT", "numSALEDATE", "ordGRADE",
+                        "ordCNDTN", "STORIES", sep="+"))
+
+# Remove categorical predictors with vast categories due to the restrictions of random forest cross-validation
+# Removed CENSUS_BLOCK, ASSESSMENT_NBHD, ASSESSMENT_SUBNBHD2, WARD
+formula <- paste0("log(PRICE) ~ ",
+                  paste("BATHRM", "ROOMS", "BEDRM", "ordAC", "AYB", "EYB", "logGBA",
+                        "FIREPLACES", "logLANDAREA", "YR_RMDL", "LATITUDE",
+                        "LONGITUDE","ZIPCODE", "CENSUS_TRACT", "numSALEDATE", "ordGRADE",
+                        "ordCNDTN","STORIES", sep="+"))
+
+# Need separate response and explanatory variate data frames
+trainy <- log(house[,"PRICE"])
+trainx <- house[, get.explanatory_varnames(formula)]
+# Five fold cross-validataion
+house.rfcv <- rfcv(trainx = trainx, trainy = trainy, cv.fold = 5)
+# We can plot the results
+with(house.rfcv, plot(n.var, error.cv, pch = 19, type="b", col="blue"))
+
+# Update formula according to cross-validation and add back removed categorical variates
+formula <- paste0("log(PRICE) ~ ",
+                  paste("BATHRM", "ROOMS", "BEDRM", "ordAC", "AYB", "EYB", "logGBA",
+                        "FIREPLACES", "logLANDAREA", "YR_RMDL", "LATITUDE", "LONGITUDE",
+                        "ZIPCODE", "CENSUS_TRACT", "numSALEDATE", "ordGRADE",
+                        "ordCNDTN","CENSUS_BLOCK", "ASSESSMENT_NBHD", "ASSESSMENT_SUBNBHD2",
+                        "WARD", "STORIES", sep="+"))
+
+### Parameters Tuning
+
+# mtry selection
+set.seed(67136)
+
+# Pick mtrys in a range by trial and error: 8
+mtrys <- c(6,7,8,9,10,11,12)
+n_mtrys <- length(mtrys)
+rmsle_fold_record <- numeric(length = 5)
+rmsle_record.mtry <- cbind(as.data.frame(mtrys),rmsle=0)
+
+# Fixed number of trees by default: 500
+num.tree <- 500
+
+for (i in 1:n_mtrys) {
+  # Create mtry_rg_pred to store all precitions
+  mtry_rg_pred<-list()
+  for (j in 1:5){
+    test<-house[house$fold==j,]
+    train<-house[house$fold!=j,]
+    mtry_rg<-ranger(as.formula(formula),
+                    data=train,
+                    importance="impurity",
+                    mtry = mtrys[i],
+                    num.trees = num.tree)
+    mtry_rg_pred<-predict(mtry_rg,data=test)$predictions
+    actual_fold <- get.response(formula, test)
+    rmsle_fold_record[j]<-rmsle(actual_fold,mtry_rg_pred)
+  }
+  # Replicate the formula of global RMSLE with fold RMSLE
+  rmsle_record.mtry[i,2] <- sqrt(sum(rmsle_fold_record^2*7904)/39520)}
+
+plot(mtrys,rmsle_record.mtry$rmsle, type='b',
+     col=adjustcolor("firebrick",0.7),pch=19,lwd=2,
+     main="cross-validated error",xlab='mtrys',ylab='cv.error')
+
+# Fix mtry
+i <- which.min(rmsle_record.mtry$rmsle) 
+mtry <- mtrys[i]
+
+# num.trees selection
+set.seed(67136)
+
+# Pick num.trees in a range by trial and error: 1000
+num.trees <- c(800,900,1000,1100,1200,1300)
+n_num.trees <- length(num.trees)
+rmsle_fold_record <- numeric(length = 5)
+rmsle_record.num.trees <- cbind(as.data.frame(num.trees),rmsle=0)
+
+for (i in 1:n_num.trees) {
+  # Create num.trees_rg_pred to store all precitions
+  num.trees_rg_pred<-list()
+  for (j in 1:5){
+    test<-house[house$fold==j,]
+    train<-house[house$fold!=j,]
+    num.trees_rg<-ranger(as.formula(formula),
+                         data=train,
+                         importance="impurity",
+                         mtry = mtry,
+                         num.trees = num.trees[i])
+    num.trees_rg_pred<-predict(num.trees_rg,data=test)$predictions
+    actual_fold <- get.response(formula, test)
+    rmsle_fold_record[j]<-rmsle(actual_fold,num.trees_rg_pred)
+  }
+  # Replicate the formula of global RMSLE with fold RMSLE
+  rmsle_record.num.trees[i,2] <- sqrt(sum(rmsle_fold_record^2*7904)/39520)}
+
+plot(num.trees,rmsle_record.num.trees$rmsle, type='b',
+     col=adjustcolor("firebrick",0.7),pch=19,lwd=2,
+     main="cross-validated error",xlab='num.trees',ylab='cv.error')
+
+
+# Fix num.trees
+i <- which.min(rmsle_record.num.trees$rmsle) 
+num.tree <- num.trees[i]
+
+# Fit the final global model
+set.seed(67136)
+
+rg_pred<-list()
+for (j in 1:5){
+  id.train <- house[house$fold!=j,]$Id
+  id.test <- house[house$fold==j,]$Id
+  test<-house[house$fold==j,]
+  train<-house[house$fold!=j,]
+  rg<-ranger(as.formula(formula),
+             data=train,
+             importance="impurity",
+             mtry = mtry,
+             num.trees = num.tree)
+  Temp <- as.data.frame(predict(rg,data=test)$predictions)
+  Temp[,2]<-id.test
+  # Initialize first step
+  if (j==1) {rg_pred<-merge(rg_pred,Temp,all=TRUE)}
+  # Update mtry_rg_pred
+  rg_pred<-merge(rg_pred,Temp,all=TRUE)
+}
+rg_pred<-rg_pred[order(as.numeric(rg_pred$V2)),]
+# Predictions
+rg_pred<-rg_pred$`predict(rg, data = test)$predictions`
+rmsle_record.final <- rmsle(house$logprice,rg_pred)
+
+# RMSLE
+rmsle_record.final
